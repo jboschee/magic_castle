@@ -20,29 +20,9 @@ runcmd:
   - "(echo -e '\nHostKeyAlgorithms ssh-rsa\n' >> /etc/ssh/sshd_config && systemctl restart sshd)"
   - yum remove -y firewalld
   - yum upgrade -y
-# Partition
-  - while [ ! -e ${home_dev} ]; do echo "home device not attached; sleep 30 sec..."  1>&2 ; sleep 30; done
-  - parted -s ${home_dev} mklabel gpt
-  - parted -s -a opt ${home_dev} mkpart primary ext4 0% 100%
-  - while [ ! -e $(readlink -f ${home_dev})*1 ]; do sleep 5; done
-  - mkfs.xfs -L home $(readlink -f ${home_dev})*1
-  - while [ ! -e ${project_dev} ]; do echo "project device not attached; sleep 30 sec..."  1>&2 ; sleep 30; done
-  - parted -s ${project_dev} mklabel gpt
-  - parted -s -a opt ${project_dev} mkpart primary ext4 0% 100%
-  - while [ ! -e $(readlink -f ${project_dev})*1 ]; do sleep 5; done
-  - mkfs.xfs -L project $(readlink -f ${project_dev})*1
-  - while [ ! -e ${scratch_dev} ]; do echo "scratch device not attached; sleep 30 sec..."  1>&2 ; sleep 30; done
-  - parted -s ${scratch_dev} mklabel gpt
-  - parted -s -a opt ${scratch_dev} mkpart primary ext4 0% 100%
-  - while [ ! -e $(readlink -f ${scratch_dev})*1 ]; do sleep 5; done
-  - mkfs.xfs -L scratch $(readlink -f ${scratch_dev})*1
-  - mkdir -p /mnt/home
-  - mkdir -p /project
-  - mkdir -p /scratch
-  - mount -a
-  # puppet master configuration
+# puppet master configuration
   - yum -y install https://yum.puppet.com/puppet6-release-el-$(grep -oP 'VERSION_ID="\K[^"]+' /etc/os-release).noarch.rpm
-  - yum -y install puppetserver
+  - yum -y install puppetserver-6.9.1 puppet-agent-6.13.0
   - mkdir /var/autosign
   - chown puppet:puppet /var/autosign
   - chmod 750 /var/autosign
@@ -52,6 +32,7 @@ runcmd:
   - /opt/puppetlabs/bin/puppet config set autosign /opt/puppetlabs/puppet/bin/autosign-validator --section master
   - /opt/puppetlabs/bin/puppet config set allow_duplicate_certs true --section master
   - /opt/puppetlabs/bin/puppet config set certname ${node_name}
+  - /opt/puppetlabs/bin/puppet config set report false
   - chown puppet:puppet /etc/autosign.conf
   - sed -i 's/^\(After=.*\)$/\1 puppetserver.service/' /usr/lib/systemd/system/puppet.service
   - systemctl daemon-reload
@@ -60,21 +41,19 @@ runcmd:
   - rm -rf /etc/puppetlabs/code/environments/production
   - git clone ${puppetenv_git} /etc/puppetlabs/code/environments/production
   - "(cd /etc/puppetlabs/code/environments/production; git checkout ${puppetenv_rev})"
-  - mv /etc/puppetlabs/code/data/terraform_data.yaml /etc/puppetlabs/code/environments/production/data/terraform_data.yaml
-  - mv /etc/puppetlabs/code/data/user_hieradata.yaml /etc/puppetlabs/code/environments/production/data/common.yaml
+  - mv /etc/puppetlabs/code/data/terraform_data.yaml /etc/puppetlabs/code/environments/production/data/
+  - mv /etc/puppetlabs/code/data/user_data.yaml /etc/puppetlabs/code/environments/production/data/
   - /opt/puppetlabs/puppet/bin/gem install librarian-puppet
   - "(cd /etc/puppetlabs/code/environments/production/ && HOME=/root PATH=$PATH:/opt/puppetlabs/puppet/bin /opt/puppetlabs/puppet/bin/librarian-puppet install)"
+# Bootstrap services that are essential to puppet agents
+  - /opt/puppetlabs/bin/puppet apply -e 'include profile::consul::server'
+# Kernel configuration
   - systemctl disable kdump
   - sed -i 's/crashkernel=auto/crashkernel=no/' /etc/default/grub
   - grub2-mkconfig -o /boot/grub2/grub.cfg
-  # Remove all ifcfg configuration files that have no corresponding network interface in ip link show.
+# Remove all ifcfg configuration files that have no corresponding network interface in ip link show.
   - for i in /etc/sysconfig/network-scripts/ifcfg-*; do if ! ip link show | grep -q "$${i##*-}:"; then rm -f $i; fi; done
   - reboot -n
-
-mounts:
-  - [ LABEL=home, /mnt/home, xfs ]
-  - [ LABEL=project, /project, xfs ]
-  - [ LABEL=scratch, /scratch, xfs ]
 
 write_files:
   - content: |
@@ -82,7 +61,7 @@ write_files:
     path: /etc/puppetlabs/code/data/terraform_data.yaml
   - content: |
       ${ indent(6, user_hieradata) }
-    path: /etc/puppetlabs/code/data/user_hieradata.yaml
+    path: /etc/puppetlabs/code/data/user_data.yaml
   - content: |
       127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4 puppet
     path: /etc/hosts
