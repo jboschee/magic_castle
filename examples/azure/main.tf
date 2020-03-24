@@ -5,6 +5,9 @@ terraform {
 module "azure" {
   source = "git::https://github.com/ComputeCanada/magic_castle.git//azure"
 
+  # If using a pre-created resource group specify it in azure_resource_group
+  # Otherwise leave the variable empty to allow terraform to manage a new resource group
+  azure_resource_group = ""
   cluster_name = "phoenix"
   domain       = "calculquebec.cloud"
   image        = {
