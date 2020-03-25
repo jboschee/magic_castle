@@ -4,6 +4,12 @@ provider "azurerm" {
   features {}
 }
 
+# Check if user provided resource group is valid
+data "azurerm_resource_group" "example" {
+  count = var.azure_resource_group == "" ? 0 : 1
+  name = var.azure_resource_group
+}
+
 # Create a resource group
 resource "azurerm_resource_group" "group" {
   count    = var.azure_resource_group == "" ? 1 : 0
